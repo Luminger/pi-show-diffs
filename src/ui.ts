@@ -195,43 +195,6 @@ class BorderFrame implements Component {
     }
 }
 
-class CenteredFrame implements Component {
-    constructor(
-        private readonly child: Component,
-        private readonly tui: { terminal: { rows: number } },
-    ) {}
-
-    invalidate(): void {
-        this.child.invalidate();
-    }
-
-    render(width: number): string[] {
-        const safeWidth = Math.max(1, width);
-        const maxFrameWidth = Math.max(1, safeWidth - 2);
-        const preferredFrameWidth = Math.max(20, Math.floor(safeWidth * 0.96));
-        const frameWidth = Math.min(maxFrameWidth, preferredFrameWidth);
-        const childLines = this.child.render(frameWidth);
-        const canvasHeight = Math.max(childLines.length, this.tui.terminal.rows || 24);
-        const topPadding = Math.max(0, Math.floor((canvasHeight - childLines.length) / 2));
-        const bottomPadding = Math.max(0, canvasHeight - topPadding - childLines.length);
-        const leftPadding = Math.max(0, Math.floor((safeWidth - frameWidth) / 2));
-        const blankLine = " ".repeat(safeWidth);
-        const lines: string[] = [];
-
-        for (let i = 0; i < topPadding; i++) lines.push(blankLine);
-
-        for (const line of childLines) {
-            const safeLine = truncateToWidth(line, frameWidth, "", true);
-            const rightPadding = Math.max(0, safeWidth - leftPadding - visibleWidth(safeLine));
-            lines.push(`${" ".repeat(leftPadding)}${safeLine}${" ".repeat(rightPadding)}`);
-        }
-
-        for (let i = 0; i < bottomPadding; i++) lines.push(blankLine);
-
-        return lines;
-    }
-}
-
 class DiffViewer implements Component {
     private scrollOffset = 0;
     private lastWidth = 80;
@@ -1357,14 +1320,13 @@ export async function reviewChangePreview(
     const decision = await ctx.ui.custom<DiffDecision>((tui, theme, _kb, done) => {
         const viewer = new DiffViewer(tui, theme, preview, allowAfterEdit);
         const framed = new BorderFrame(viewer, (text) => theme.fg("accent", text));
-        const centered = new CenteredFrame(framed, tui);
         const previousShowHardwareCursor = tui.getShowHardwareCursor();
         const syncCursorMode = () => tui.setShowHardwareCursor(viewer.isEditingInline() || previousShowHardwareCursor);
         syncCursorMode();
 
         return {
-            render: (width: number) => centered.render(width),
-            invalidate: () => centered.invalidate(),
+            render: (width: number) => framed.render(width),
+            invalidate: () => framed.invalidate(),
             handleInput: (data: string) => {
                 if (viewer.isEditingInline()) {
                     if (viewer.handleInput(data)) {
@@ -1398,7 +1360,7 @@ export async function reviewChangePreview(
             },
             dispose: () => tui.setShowHardwareCursor(previousShowHardwareCursor),
         };
-    });
+    }, { overlay: true, overlayOptions: { anchor: "center", width: "96%", maxHeight: "90%" } });
 
     if (decision.action !== "steer") return decision;
     const feedback = await ctx.ui.editor(`How should ${preview.path} change instead?`, "");
